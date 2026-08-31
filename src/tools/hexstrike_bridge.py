@@ -1,7 +1,12 @@
 import os
 import requests
 from typing import Dict, Any, Optional
-from src.config import ALLOWED_TARGETS  # Adjust import based on your config module
+
+# Safe scope fallback
+try:
+    from src.config import ALLOWED_TARGETS
+except ImportError:
+    ALLOWED_TARGETS = []
 
 
 class HexStrikeBridge:
