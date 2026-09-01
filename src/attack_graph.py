@@ -1,6 +1,6 @@
 import networkx as nx
 from typing import Dict, Any, List, Optional
-
+import matplotlib.pyplot as plt
 
 class AttackGraph:
     """
@@ -75,3 +75,47 @@ class AttackGraph:
             "nodes": list(self.graph.nodes(data=True)),
             "edges": list(self.graph.edges(data=True))
         }
+
+    def visualize(self, output_file: str = "attack_graph.png") -> str:
+        """
+        Renders the AttackGraph to a PNG image with color-coded node types.
+        """
+        if self.graph.number_of_nodes() == 0:
+            print("[!] Cannot render an empty graph.")
+            return ""
+
+        plt.figure(figsize=(10, 7))
+        pos = nx.spring_layout(self.graph, seed=42)
+
+        # Color mapping by node type
+        color_map = []
+        for _, data in self.graph.nodes(data=True):
+            node_type = data.get("type", "")
+            if node_type == "domain":
+                color_map.append("#4C72B0")  # Blue
+            elif node_type == "port":
+                color_map.append("#DD8452")  # Orange
+            elif node_type == "service":
+                color_map.append("#55A868")  # Green
+            elif node_type == "endpoint":
+                color_map.append("#C44E52")  # Red
+            else:
+                color_map.append("#8172B3")  # Purple default
+
+        # Draw nodes & edges
+        nx.draw_networkx_nodes(self.graph, pos, node_color=color_map, node_size=1200, alpha=0.9)
+        nx.draw_networkx_edges(self.graph, pos, arrowstyle="->", arrowsize=15, edge_color="#888888", width=1.5)
+        nx.draw_networkx_labels(self.graph, pos, font_size=8, font_family="sans-serif", font_weight="bold")
+
+        # Edge relationship labels
+        edge_labels = nx.get_edge_attributes(self.graph, "relationship")
+        nx.draw_networkx_edge_labels(self.graph, pos, edge_labels=edge_labels, font_size=7)
+
+        plt.title("Agentic-Recon Attack Surface Topology", fontsize=12, fontweight="bold")
+        plt.axis("off")
+        plt.tight_layout()
+        plt.savefig(output_file, dpi=300)
+        plt.close()
+
+        print(f"[+] Attack graph image generated: '{output_file}'")
+        return output_file
