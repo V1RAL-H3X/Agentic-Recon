@@ -1,10 +1,9 @@
-import json
 import logging
 import subprocess
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 
-from src.utils.scope import ScopeValidator
+from src.scope import ScopeValidator
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ToolWrapper")

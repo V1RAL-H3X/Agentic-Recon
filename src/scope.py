@@ -70,8 +70,8 @@ class ScopeValidator:
 if __name__ == '__main__':
   # Locate config/scope.json relative to project root
   current_dir = os.path.dirname(os.path.abspath(__file__))
-  project_root = os.path.abspath(os.path.join(current_dir, '..', '..'))
-  config_path = os.path.join(project_root, 'config', 'scope.json')
+  project_root = os.path.abspath(os.path.join(current_dir, '', '..'))
+  config_path = os.path.join(project_root, '../config', 'scope.json')
 
   if os.path.exists(config_path):
     with open(config_path, 'r') as f:

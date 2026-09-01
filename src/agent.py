@@ -1,7 +1,8 @@
 from typing import Dict, Any, Optional
 from src.attack_graph import AttackGraph
 from src.tools.hexstrike_bridge import HexStrikeBridge
-
+from src.planner import LLMPlanner
+from src.scope import ScopeValidator
 
 class ReconAgent:
     """
@@ -14,13 +15,27 @@ class ReconAgent:
         self.graph = AttackGraph()
         self.graph.add_target_node(target)
         self.bridge = HexStrikeBridge(base_url=hexstrike_url)
+        self.planner = LLMPlanner()
+
+        self.validator = ScopeValidator(
+            allowed_domains=["example.com"],
+            allowed_cidrs=["192.0.2.0/24"]
+        )
 
     def run_task(self, tool_name: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Executes a recon task. Attempts execution via HexStrikeBridge, falling back
         to direct graph updates or local wrappers if the server is offline.
         """
+
+        if not self.validator.is_target_in_scope(self.target):
+            print(f"[-] [Guardrail Blocked] Target '{self.target}' is out of scope!")
+            return {"status": "error", "message": "Target out of scope"}
+
         print(f"[*] Agent dispatching task: '{tool_name}' against target: '{self.target}'")
+
+        return self._execute_fallback(tool_name, params)
+
 
         # 1. Scope Check & Server Health
         if not self.bridge.validate_scope(self.target):
@@ -68,3 +83,18 @@ class ReconAgent:
             return {"status": "success", "mode": "fallback", "target": self.target}
 
         return {"status": "success", "mode": "fallback", "target": self.target}
+
+    def auto_step(self) -> Dict[str, Any]:
+        """
+        Queries LLMPlanner to inspect current AttackGraph state
+        and execute the next action automatically.
+        """
+        summary = self.graph.get_summary()
+        plan = self.planner.decide_next_action(summary)
+
+        print(f"[*] Planner Decision: {plan['tool']} -> {plan['reasoning']}")
+
+        if plan["tool"] == "complete":
+            return {"status": "finished", "reason": plan["reasoning"]}
+
+        return self.run_task(plan["tool"], plan.get("params"))

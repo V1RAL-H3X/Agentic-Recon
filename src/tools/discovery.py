@@ -67,7 +67,7 @@ class HTTPXTool(BaseTool):
 
   if __name__ == "__main__":
       import os
-      from src.utils.scope import ScopeValidator
+      from src.scope import ScopeValidator
 
       # Load config for verification
       current_dir = os.path.dirname(os.path.abspath(__file__))

@@ -20,14 +20,27 @@ def main():
         "--task",
         type=str,
         default="portscan",
-        help="Reconnaissance task/tool to execute (e.g., portscan, subdomains)"
+        help="Single reconnaissance task to execute (ignored if --auto is set)"
+    )
+
+    parser.add_argument(
+        "--auto",
+        action="store_true",
+        help="Enable autonomous execution mode where LLMPlanner drives the recon loop"
+    )
+
+    parser.add_argument(
+        "--max-steps",
+        type=int,
+        default=5,
+        help="Maximum decision loop iterations in --auto mode (default: 5)"
     )
 
     parser.add_argument(
         "--hexstrike-url",
         type=str,
         default="http://localhost:8888",
-        help="Base URL for the HexStrike API bridge (default: http://localhost:8888)"
+        help="Base URL for the HexStrike API bridge"
     )
 
     parser.add_argument(
@@ -39,26 +52,38 @@ def main():
     parser.add_argument(
         "--visualize",
         type=str,
-        help="Path to save the graph visualization image (e.g., attack_graph.png)"
+        help="Path to save graph topology visualization image (e.g., attack_graph.png)"
     )
 
     args = parser.parse_args()
 
     print("=" * 60)
-    print(" Agentic-Recon Framework | Automated Threat Surface Mapping")
+    print(" Agentic-Recon Framework | Autonomous Threat Surface Mapping")
     print("=" * 60)
     print(f"[*] Target Scope    : {args.target}")
-    print(f"[*] Initial Task    : {args.task}")
+    print(f"[*] Mode            : {'AUTONOMOUS (LLM Loop)' if args.auto else f'MANUAL ({args.task})'}")
     print(f"[*] HexStrike Bridge: {args.hexstrike_url}")
     print("-" * 60)
 
-    # 1. Initialize Agent Engine
+    # 1. Instantiate Agent Engine
     agent = ReconAgent(target=args.target, hexstrike_url=args.hexstrike_url)
 
-    # 2. Execute Task
-    result = agent.run_task(tool_name=args.task)
+    # 2. Execution Logic
+    if args.auto:
+        print("[*] Initiating Autonomous Planning Loop...\n")
+        step_count = 0
+        while step_count < args.max_steps:
+            step_count += 1
+            print(f"--- [ Loop Step {step_count} / {args.max_steps} ] ---")
+            result = agent.auto_step()
 
-    # 3. Print Results & Graph Topology
+            if result.get("status") == "finished":
+                print(f"\n[+] Planner signaled completion: {result.get('reason')}")
+                break
+    else:
+        agent.run_task(tool_name=args.task)
+
+    # 3. Print Results & Graph Summary
     print("-" * 60)
     print("[+] Execution Complete.")
     summary = agent.graph.get_summary()
