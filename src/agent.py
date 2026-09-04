@@ -1,100 +1,103 @@
+import logging
 from typing import Dict, Any, Optional
-from src.attack_graph import AttackGraph
-from src.tools.hexstrike_bridge import HexStrikeBridge
-from src.planner import LLMPlanner
-from src.scope import ScopeValidator
+from .attack_graph import AttackGraph
+from .planner import LLMPlanner
+from .scope import ScopeValidator
+from .tools.hexstrike_bridge import HexStrikeBridge
+
+logging.basicConfig(level=logging.INFO, format="[*] %(message)s")
+
 
 class ReconAgent:
     """
-    Main agent orchestration loop. Coordinates scope checks, tool dispatch via HexStrike,
-    and attack surface mapping via AttackGraph.
+    Core Autonomous Reconnaissance Agent.
+    Coordinates AttackGraph topology state, ScopeValidator guardrails, 
+    HexStrikeBridge tool dispatches, and LLMPlanner decision loops.
     """
 
-    def __init__(self, target: str, hexstrike_url: str = "http://localhost:8888"):
+    def __init__(self, target: str, hexstrike_url: Optional[str] = "http://localhost:8888"):
         self.target = target
         self.graph = AttackGraph()
-        self.graph.add_target_node(target)
-        self.bridge = HexStrikeBridge(base_url=hexstrike_url)
         self.planner = LLMPlanner()
 
-        self.validator = ScopeValidator(
-            allowed_domains=["example.com"],
-            allowed_cidrs=["192.0.2.0/24"]
+        # Pass target dynamically into ScopeValidator scope rules
+        self.scope = ScopeValidator(
+            allowed_domains=[self.target],
+            allowed_cidrs=[]
         )
+
+        self.bridge = HexStrikeBridge(api_url=hexstrike_url, use_local_binaries=True)
+
+        # Seed root target into the attack topology
+        self.graph.add_target_node(self.target)
 
     def run_task(self, tool_name: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
-        Executes a recon task. Attempts execution via HexStrikeBridge, falling back
-        to direct graph updates or local wrappers if the server is offline.
+        Validates target scope, executes tool via HexStrikeBridge,
+        and ingests live topology data into the AttackGraph.
         """
+        if not self.scope.is_in_scope(self.target):
+            logging.warning(f"Scope Check Failed: Target '{self.target}' is OUT OF SCOPE.")
+            return {"status": "blocked", "reason": "Out of scope"}
 
-        if not self.validator.is_target_in_scope(self.target):
-            print(f"[-] [Guardrail Blocked] Target '{self.target}' is out of scope!")
-            return {"status": "error", "message": "Target out of scope"}
+        logging.info(f"Agent dispatching task: '{tool_name}' against target: '{self.target}'")
 
-        print(f"[*] Agent dispatching task: '{tool_name}' against target: '{self.target}'")
+        # 1. Dispatch execution via HexStrikeBridge
+        result = self.bridge.execute_tool(tool_name=tool_name, target=self.target, params=params)
 
-        return self._execute_fallback(tool_name, params)
-
-
-        # 1. Scope Check & Server Health
-        if not self.bridge.validate_scope(self.target):
-            print(f"[-] [Guardrail Blocked] Target '{self.target}' is out of scope!")
-            return {"status": "blocked", "reason": "out_of_scope"}
-
-        if not self.bridge.is_alive():
-            print(f"[!] HexStrike server offline at {self.bridge.base_url}. Using local fallback mode.")
-            # Local fallback / mock execution state for offline development
-            return self._execute_fallback(tool_name, params)
-
-        # 2. Dispatch via HexStrike Bridge
-        result = self.bridge.execute_tool(tool_name, self.target, params)
-
-        # 3. Ingest normalized results into AttackGraph
+        # 2. Ingest parsed tool output directly into AttackGraph
         if result.get("status") == "success":
-            self._ingest_results(result)
+            parsed_data = result.get("parsed_data", {})
+
+            # Ingest Open Ports & Services
+            for item in parsed_data.get("open_ports", []):
+                port_num = item.get("port")
+                protocol = item.get("protocol", "tcp")
+                service_name = item.get("service", "unknown")
+                version = item.get("version", "unknown")
+
+                self.graph.add_service(
+                    host=self.target,
+                    port=port_num,
+                    service_name=service_name,
+                    version=version,
+                    protocol=protocol
+                )
+
+            # Ingest Discovered Subdomains
+            for sub in parsed_data.get("subdomains", []):
+                self.graph.add_target_node(sub)
+
+            # Ingest Exposed Web Endpoints
+            for ep in parsed_data.get("endpoints", []):
+                path = ep.get("path", "/")
+                status = ep.get("status_code", 200)
+                self.graph.add_endpoint(host=self.target, path=path, status_code=status)
 
         return result
 
-    def _ingest_results(self, result: Dict[str, Any]) -> None:
-        """Parses normalized bridge outputs into AttackGraph nodes and edges."""
-        for node in result.get("nodes", []):
-            node_type = node.get("type")
-            if node_type == "port":
-                self.graph.add_port(self.target, node.get("port"), node.get("protocol", "tcp"))
-            elif node_type == "service":
-                self.graph.add_service(
-                    self.target,
-                    node.get("port"),
-                    node.get("service"),
-                    node.get("version")
-                )
-            elif node_type == "endpoint":
-                self.graph.add_endpoint(self.target, node.get("path"), node.get("status_code"))
-
-    def _execute_fallback(self, tool_name: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Simulates tool execution when external services are offline (prevents crashes during development)."""
-        print(f"[*] Running local mock ingestion for testing '{tool_name}'...")
-
-        # Simulating open port discovery for development test
-        if tool_name in ["nmap", "portscan"]:
-            self.graph.add_service(self.target, 443, "https", "TLSv1.3")
-            self.graph.add_service(self.target, 80, "http", "nginx/1.18.0")
-            return {"status": "success", "mode": "fallback", "target": self.target}
-
-        return {"status": "success", "mode": "fallback", "target": self.target}
-
     def auto_step(self) -> Dict[str, Any]:
         """
-        Queries LLMPlanner to inspect current AttackGraph state
-        and execute the next action automatically.
+        Executes a single iteration of the autonomous decision loop:
+        1. Extract current graph summary state.
+        2. Query LLMPlanner for the next optimal recon step.
+        3. Dispatch step via run_task() if actionable.
         """
-        summary = self.graph.get_summary()
-        plan = self.planner.decide_next_action(summary)
+        graph_summary = self.graph.get_summary()
+        decision = self.planner.decide_next_action(graph_summary)
 
-        print(f"[*] Planner Decision: {plan['tool']} -> {plan['reasoning']}")
+        chosen_tool = decision.get("tool")
+        reasoning = decision.get("reasoning", "No reasoning provided.")
 
-        if plan["tool"] == "complete":
-            return {"status": "finished", "reason": plan["reasoning"]}
+        logging.info(f"Planner Decision: {chosen_tool} -> {reasoning}")
 
-        return self.run_task(plan["tool"], plan.get("params"))
+        if chosen_tool == "complete":
+            return {"status": "finished", "reason": reasoning}
+
+        # Dispatch the chosen tool
+        task_result = self.run_task(tool_name=chosen_tool, params=decision.get("params"))
+        return {
+            "status": "in_progress",
+            "decision": decision,
+            "task_result": task_result
+        }
