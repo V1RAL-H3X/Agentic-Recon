@@ -115,7 +115,7 @@ python main.py --target http://localhost:8000 --web-test --visualize attack_grap
 ```
 ## CLI Parameters for Web Recon
 
-* `--target (or -t)`: The target domain, IP, or base URL (e.g., http://localhost:8000 or example.com).
+* `--target (or -t)`: The target domain, IP, or base URL (e.g., `http://localhost:8000` or example.com).
 
 * `--web-test`: Enables standalone WebReconAgent directory fuzzing mode.
 
