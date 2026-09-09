@@ -11,3 +11,7 @@ venv/
 
 # Local run output artifacts
 reports/
+
+# Local recon outputs
+graph_export.json
+attack_graph.png
