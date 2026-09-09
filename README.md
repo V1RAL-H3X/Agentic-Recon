@@ -16,57 +16,32 @@ An agentic reconnaissance framework designed for automated, hypothesis-driven at
 
 ## 🏗️ Architecture Overview
 
-```text
-               ┌─────────────────────────────┐
-               │    Target Input & Scope     │
-               │   Validator Guardrail       │
-               └──────────────┬──────────────┘
-                              │
-                              ▼
-               ┌─────────────────────────────┐
-               │    Recon Agent Planner      │
-               └──────────────┬──────────────┘
-                              │
-       ┌──────────────────────┴──────────────────────┐
-       ▼                                             ▼
-┌─────────────────────────────┐               ┌─────────────────────────────┐
-│ Subdomain Enumeration       │               │ Web Fingerprinting          │
-│ (Subfinder Wrapper)         │               │ (HTTPX Wrapper)             │
-└──────────────┬──────────────┘               └──────────────┬──────────────┘
-               │                                             │
-               └──────────────────────┬──────────────────────┘
-                                      │
-                                      ▼
-                       ┌─────────────────────────────┐
-                       │   NetworkX Graph Engine     │
-                       └──────────────┬──────────────┘
-                                      │
-                                      ▼
-                       ┌─────────────────────────────┐
-                       │  JSON & Markdown Reports    │
-                       └─────────────────────────────┘
-```
+## Architecture
+
+![Agentic-Recon Framework Architecture](assets/architecture.png)
 ---
 ## 📂 Repository Structure
 
 ```text
-agentic-recon/
-├── config/
-│   └── scope.json            # Target domain, CIDR, and IP scope definitions
-├── src/
-│   ├── agent/
-│   │   └── planner.py        # Core planning & decision loop
-│   ├── graph/
-│   │   └── attack_graph.py   # NetworkX graph representation engine
-│   ├── tools/
-│   │   ├── base.py           # Base abstract tool execution wrapper
-│   │   └── discovery.py      # Subfinder & HTTPX tool implementations
-│   └── utils/
-│       └── scope.py          # Scope validation & safety engine
-├── reports/                  # Generated JSON graph & Markdown outputs
-├── main.py                   # Main CLI entry point
-├── requirements.txt          # Project dependencies
-└── README.md                 # Project documentation
+Agentic-Recon/
+├── .gitignore               # Excludes temporary outputs, graph exports, and cache files
+├── README.md                # Comprehensive project documentation and usage guides
+├── main.py                  # Central CLI dispatcher for routing manual/auto modes
+└── src/                     # Core source code package
+    ├── __init__.py          # Package initializer
+    ├── agent.py             # Core reconnaissance agent controlling task execution
+    ├── planner.py           # Autonomous planning loop and task selector
+    ├── scope.py             # Target scope parsing, validation, and boundary enforcement
+    ├── graph/               # Attack graph topology management and rendering
+    │   ├── __init__.py      # Graph package initializer
+    │   └── attack_graph.py  # NetworkX topology mapping and graph export utilities
+    ├── tools/               # Integration wrappers for external binaries and APIs
+    │   ├── __init__.py      # Tools package initializer
+    │   ├── hexstrike_client.py # Bridge interface for HexStrike services
+    │   └── discovery.py     # Discovery and scanning execution utilities
+    └── agents/              # Specialized agent architectures
+        ├── __init__.py      # Agents package initializer
+        └── web_recon.py     # Standalone web reconnaissance and directory fuzzing agent
 
 ```
 ---
@@ -109,7 +84,6 @@ agentic-recon/
 ```text
 Run the main execution pipeline against an in-scope target domain:
 
-```bash
 python main.py -d example.com
 
 Flag,Long Argument,Description,Default
@@ -117,6 +91,40 @@ Flag,Long Argument,Description,Default
 -c,--config,Path to scope JSON file,config/scope.json
 -o,--output,Directory for exported reports,reports
 ```
+---
+
+# 🌐 Web Reconnaissance Mode  
+
+In addition to network port scanning and autonomous loops, Agentic-Recon includes a standalone WebReconAgent module. This module gates web directory fuzzing (using underlying tools like Gobuster) away from network-only tasks to map out web server endpoints and attack surfaces safely.
+
+## How it Works
+When invoked, the web reconnaissance workflow:
+
+1. Validates and normalizes the target URL.
+
+2. Executes directory fuzzing against the target.
+
+3. Dynamically adds discovered web endpoints as nodes into the AttackGraph, linking them back to the root web service via an EXPOSES_ENDPOINT relationship.
+
+4. Automatically exports the topology to JSON and renders a visual PNG map.
+
+
+## Usage Example
+
+To run a standalone web recon test against a target:
+```text
+python main.py --target http://localhost:8000 --web-test --visualize attack_graph.png --export-graph graph_export.json
+```
+## CLI Parameters for Web Recon
+
+* `--target (or -t)`: The target domain, IP, or base URL (e.g., http://localhost:8000 or example.com).
+
+* `--web-test`: Enables standalone WebReconAgent directory fuzzing mode.
+
+* `--export-graph`: File path to save the resulting attack graph JSON export (default: graph_export.json).
+
+* `--visualize`: File path to save the generated topology diagram (default: attack_graph.png).
+
 ---
 ## 📊 Sample Output
 

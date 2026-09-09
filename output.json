@@ -1,0 +1,13 @@
+{
+  "total_nodes": 1,
+  "total_edges": 0,
+  "nodes": [
+    [
+      "example.com",
+      {
+        "type": "domain"
+      }
+    ]
+  ],
+  "edges": []
+}

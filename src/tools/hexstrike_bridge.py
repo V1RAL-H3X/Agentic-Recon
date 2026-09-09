@@ -50,8 +50,19 @@ class HexStrikeBridge:
             logging.warning("Nmap binary not found in system PATH.")
             return self._mock_fallback("portscan", target)
 
-        ports = params.get("ports", "80,443,22,8080,8443,9929,31337")
-        cmd = [nmap_path, "-sV", "-p", str(ports), target, "-oX", "-"]
+        # Parse ports parameter passed from planner/args
+        raw_ports = str(params.get("ports", "80,443,22,8080,8443,9929,31337")).strip()
+
+        # Handle 'top-100' or 'top' strings cleanly for Nmap CLI
+        if raw_ports.startswith("top-"):
+            top_num = raw_ports.replace("top-", "")
+            port_args = ["--top-ports", top_num]
+        elif raw_ports == "top":
+            port_args = ["--top-ports", "100"]
+        else:
+            port_args = ["-p", raw_ports]
+
+        cmd = [nmap_path, "-sV"] + port_args + [target, "-oX", "-"]
 
         logging.info(f"Executing local binary command: {' '.join(cmd)}")
 

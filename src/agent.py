@@ -101,3 +101,29 @@ class ReconAgent:
             "decision": decision,
             "task_result": task_result
         }
+
+    def process_web_targets(self, attack_graph):
+        """
+        Scans the AttackGraph for HTTP/HTTPS services and dispatches WebReconAgent.
+        """
+        web_nodes = []
+        for node, attrs in attack_graph.graph.nodes(data=True):
+            service = attrs.get("service", "").lower()
+            port = attrs.get("port")
+
+            if service in ["http", "https"] or port in [80, 443, 8080, 8443]:
+                protocol = "https" if service == "https" or port in [443, 8443] else "http"
+                host = attrs.get("host", self.target)
+                target_url = f"{protocol}://{host}:{port}" if port not in [80, 443] else f"{protocol}://{host}"
+                web_nodes.append((node, target_url))
+
+        for node_id, url in web_nodes:
+            logging.info(f"[+] Dispatching WebReconAgent for target: {url}")
+            res = self.web_agent.execute_dir_fuzz(url)
+
+            # Ingest discovered endpoints as child nodes off the service node
+            if res.get("status") == "success":
+                for path_data in res.get("discovered_paths", []):
+                    endpoint_node = f"{url}{path_data['path']}"
+                    attack_graph.add_node(endpoint_node, node_type="endpoint", path=path_data['path'])
+                    attack_graph.add_edge(node_id, endpoint_node, relationship="EXPOSES_ENDPOINT")
