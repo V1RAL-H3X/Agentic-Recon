@@ -1,6 +1,8 @@
 import argparse
 import json
-import sys
+import logging
+from src.agents.web_recon import WebReconAgent
+from src.attack_graph import AttackGraph
 from src.agent import ReconAgent
 
 
@@ -44,31 +46,71 @@ def main():
     )
 
     parser.add_argument(
+        "--web-test",
+        action="store_true",
+        help="Run standalone WebReconAgent directory fuzzing test"
+    )
+
+    parser.add_argument(
         "--export-graph",
         type=str,
-        help="Path to export the final graph summary JSON (e.g., output.json)"
+        default="graph_export.json",
+        help="Path to export final graph summary JSON"
     )
 
     parser.add_argument(
         "--visualize",
         type=str,
-        help="Path to save graph topology visualization image (e.g., attack_graph.png)"
+        default="attack_graph.png",
+        help="Path to save graph topology visualization image"
     )
 
     args = parser.parse_args()
+    logging.basicConfig(level=logging.INFO, format="[*] %(message)s")
 
     print("=" * 60)
     print(" Agentic-Recon Framework | Autonomous Threat Surface Mapping")
     print("=" * 60)
+
+    # Branch 1: Standalone Web Recon Test via --web-test
+    if args.web_test:
+        print(f"[*] Mode            : STANDALONE WEB RECON (Gobuster/FFUF)")
+        print(f"[*] Target Scope    : {args.target}")
+        print("-" * 60)
+
+        target_url = args.target if args.target.startswith("http") else f"http://{args.target}"
+        web_agent = WebReconAgent()
+        result = web_agent.execute_dir_fuzz(target_url)
+
+        graph = AttackGraph()
+        graph.add_node(target_url, node_type="web_service", url=target_url)
+
+        if result.get("status") == "success":
+            paths = result.get("discovered_paths", [])
+            logging.info(f"Discovered {len(paths)} web endpoints.")
+            for item in paths:
+                endpoint_url = item["url"]
+                graph.add_node(endpoint_url, node_type="endpoint", path=item["path"])
+                graph.add_edge(target_url, endpoint_url, relationship="EXPOSES_ENDPOINT")
+        else:
+            logging.error(f"Web Recon failed: {result.get('reason')}")
+
+        if args.export_graph:
+            graph.export_json(args.export_graph)
+        if args.visualize:
+            graph.visualize(args.visualize)
+
+        print("=" * 60)
+        return
+
+    # Branch 2: Core Autonomous / Task Engine (Default behavior)
     print(f"[*] Target Scope    : {args.target}")
     print(f"[*] Mode            : {'AUTONOMOUS (LLM Loop)' if args.auto else f'MANUAL ({args.task})'}")
     print(f"[*] HexStrike Bridge: {args.hexstrike_url}")
     print("-" * 60)
 
-    # 1. Instantiate Agent Engine
     agent = ReconAgent(target=args.target, hexstrike_url=args.hexstrike_url)
 
-    # 2. Execution Logic
     if args.auto:
         print("[*] Initiating Autonomous Planning Loop...\n")
         step_count = 0
@@ -83,7 +125,6 @@ def main():
     else:
         agent.run_task(tool_name=args.task)
 
-    # 3. Print Results & Graph Summary
     print("-" * 60)
     print("[+] Execution Complete.")
     summary = agent.graph.get_summary()
@@ -92,13 +133,11 @@ def main():
     for node in summary["nodes"]:
         print(f"    └── Node: {node[0]} | Attributes: {node[1]}")
 
-    # 4. Optional JSON Export
     if args.export_graph:
         with open(args.export_graph, "w") as f:
             json.dump(summary, f, indent=2)
         print(f"[+] Graph saved to '{args.export_graph}'")
 
-    # 5. Optional Graph Visualization Image
     if args.visualize:
         agent.graph.visualize(args.visualize)
 

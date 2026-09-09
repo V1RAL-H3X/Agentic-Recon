@@ -1,74 +1,50 @@
+import json
+import logging
 import networkx as nx
-from typing import Dict, Any, List, Optional
 import matplotlib.pyplot as plt
+
 
 class AttackGraph:
     """
-    In-memory NetworkX graph representing the target's discovered attack surface.
-    Tracks subdomains, ports, services, endpoints, and their relationships.
+    Manages the attack surface directed graph using NetworkX.
+    Tracks hosts, open ports, web endpoints, vulnerabilities, and relationships.
     """
 
     def __init__(self):
         self.graph = nx.DiGraph()
 
-    def add_target_node(self, target: str) -> None:
-        """Adds a root target or subdomain node."""
-        if not self.graph.has_node(target):
-            self.graph.add_node(target, type="domain")
+    def add_node(self, node_id: str, **attrs):
+        """Adds or updates a node in the graph with optional attributes."""
+        self.graph.add_node(node_id, **attrs)
 
-    def add_port(self, host: str, port: int, protocol: str = "tcp") -> str:
-        """
-        Links a host node to a port node.
-        Relationship: (Host) -[HAS_PORT]-> (Port)
-        """
-        self.add_target_node(host)
-        port_node_id = f"{host}:{port}/{protocol}"
+    def add_target_node(self, target: str):
+        """Adds the root target node to the graph."""
+        self.add_node(target, node_type="web_service", url=target)
 
-        self.graph.add_node(
+    def add_service(self, target: str = None, host: str = None, port: int = None, service_name: str = None,
+                    service: str = None, protocol: str = "tcp", state: str = "open", **attrs):
+        """Adds a port/service node and links it to the target/host."""
+        t = target or host
+        s_name = service_name or service or "unknown"
+        port_node_id = f"{t}:{port}"
+
+        self.add_node(
             port_node_id,
-            type="port",
-            port_number=port,
-            protocol=protocol
+            node_type="port",
+            port=port,
+            service=s_name,
+            protocol=protocol,
+            state=state,
+            **attrs
         )
-        self.graph.add_edge(host, port_node_id, relationship="HAS_PORT")
-        return port_node_id
+        self.add_edge(t, port_node_id, relationship="HAS_PORT")
 
-    def add_service(self, host: str, port: int, service_name: str, version: Optional[str] = None, protocol: str = "tcp") -> str:
-        """
-        Links a port node to a service node.
-        Relationship: (Port) -[RUNS_SERVICE]-> (Service)
-        """
-        port_node_id = self.add_port(host, port, protocol)
-        service_node_id = f"service:{service_name}:{host}:{port}"
+    def add_edge(self, u: str, v: str, **attrs):
+        """Adds a directed edge between two nodes with optional relationship attributes."""
+        self.graph.add_edge(u, v, **attrs)
 
-        self.graph.add_node(
-            service_node_id,
-            type="service",
-            name=service_name,
-            version=version or "unknown"
-        )
-        self.graph.add_edge(port_node_id, service_node_id, relationship="RUNS_SERVICE")
-        return service_node_id
-
-    def add_endpoint(self, host: str, path: str, status_code: Optional[int] = None) -> str:
-        """
-        Links a host node to a web endpoint node.
-        Relationship: (Host) -[EXPOSES_ENDPOINT]-> (Endpoint)
-        """
-        self.add_target_node(host)
-        endpoint_node_id = f"{host}{path}"
-
-        self.graph.add_node(
-            endpoint_node_id,
-            type="endpoint",
-            path=path,
-            status_code=status_code
-        )
-        self.graph.add_edge(host, endpoint_node_id, relationship="EXPOSES_ENDPOINT")
-        return endpoint_node_id
-
-    def get_summary(self) -> Dict[str, Any]:
-        """Returns node and edge counts grouped by type."""
+    def get_summary(self) -> dict:
+        """Returns a summary dictionary of nodes, edges, and graph statistics."""
         return {
             "total_nodes": self.graph.number_of_nodes(),
             "total_edges": self.graph.number_of_edges(),
@@ -76,46 +52,55 @@ class AttackGraph:
             "edges": list(self.graph.edges(data=True))
         }
 
-    def visualize(self, output_file: str = "attack_graph.png") -> str:
-        """
-        Renders the AttackGraph to a PNG image with color-coded node types.
-        """
-        if self.graph.number_of_nodes() == 0:
-            print("[!] Cannot render an empty graph.")
-            return ""
+    def export_json(self, filepath: str = "graph_export.json"):
+        """Exports the graph topology and attributes to a JSON file."""
+        try:
+            data = nx.node_link_data(self.graph)
+            with open(filepath, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+            logging.info(f"[*] AttackGraph exported to JSON: {filepath}")
+        except Exception as e:
+            logging.error(f"[!] Failed to export AttackGraph JSON: {str(e)}")
 
-        plt.figure(figsize=(10, 7))
-        pos = nx.spring_layout(self.graph, seed=42)
+    def visualize(self, filepath: str = "attack_graph.png"):
+        """Renders the attack surface graph to an image file with custom styling."""
+        if len(self.graph.nodes) == 0:
+            logging.warning("[!] AttackGraph is empty. Skipping visual rendering.")
+            return
 
-        # Color mapping by node type
-        color_map = []
-        for _, data in self.graph.nodes(data=True):
-            node_type = data.get("type", "")
-            if node_type == "domain":
-                color_map.append("#4C72B0")  # Blue
-            elif node_type == "port":
-                color_map.append("#DD8452")  # Orange
-            elif node_type == "service":
-                color_map.append("#55A868")  # Green
-            elif node_type == "endpoint":
-                color_map.append("#C44E52")  # Red
-            else:
-                color_map.append("#8172B3")  # Purple default
+        try:
+            plt.figure(figsize=(12, 9))
+            pos = nx.spring_layout(self.graph, k=0.5, iterations=50)
 
-        # Draw nodes & edges
-        nx.draw_networkx_nodes(self.graph, pos, node_color=color_map, node_size=1200, alpha=0.9)
-        nx.draw_networkx_edges(self.graph, pos, arrowstyle="->", arrowsize=15, edge_color="#888888", width=1.5)
-        nx.draw_networkx_labels(self.graph, pos, font_size=8, font_family="sans-serif", font_weight="bold")
+            color_map = []
+            for _, attrs in self.graph.nodes(data=True):
+                node_type = attrs.get("node_type", "default")
+                if node_type == "web_service":
+                    color_map.append("#3498db")  # Blue
+                elif node_type == "endpoint":
+                    color_map.append("#2ecc71")  # Green
+                elif node_type == "port":
+                    color_map.append("#f1c40f")  # Yellow
+                elif node_type == "vulnerability":
+                    color_map.append("#e74c3c")  # Red
+                else:
+                    color_map.append("#95a5a6")  # Gray
 
-        # Edge relationship labels
-        edge_labels = nx.get_edge_attributes(self.graph, "relationship")
-        nx.draw_networkx_edge_labels(self.graph, pos, edge_labels=edge_labels, font_size=7)
+            nx.draw_networkx_nodes(
+                self.graph, pos, node_color=color_map, node_size=2200, alpha=0.9
+            )
+            nx.draw_networkx_edges(
+                self.graph, pos, arrowstyle="->", arrowsize=15, edge_color="#bdc3c7", width=1.5
+            )
+            nx.draw_networkx_labels(
+                self.graph, pos, font_size=8, font_weight="bold"
+            )
 
-        plt.title("Agentic-Recon Attack Surface Topology", fontsize=12, fontweight="bold")
-        plt.axis("off")
-        plt.tight_layout()
-        plt.savefig(output_file, dpi=300)
-        plt.close()
-
-        print(f"[+] Attack graph image generated: '{output_file}'")
-        return output_file
+            plt.title("Agentic-Recon Attack Surface Topology", fontsize=14)
+            plt.axis("off")
+            plt.tight_layout()
+            plt.savefig(filepath, dpi=300, bbox_inches="tight")
+            plt.close()
+            logging.info(f"[*] AttackGraph visualization rendered to: {filepath}")
+        except Exception as e:
+            logging.error(f"[!] Failed to visualize AttackGraph: {str(e)}")
