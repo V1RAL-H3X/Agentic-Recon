@@ -16,9 +16,7 @@ An agentic reconnaissance framework designed for automated, hypothesis-driven at
 
 ## 🏗️ Architecture Overview
 
-## Architecture
-
-![Agentic-Recon Framework Architecture](assets/architecture.png)
+![Agentic-Recon Framework Architecture](assets/Architecture.png)
 ---
 ## 📂 Repository Structure
 
